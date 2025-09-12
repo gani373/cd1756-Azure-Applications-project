@@ -8,14 +8,13 @@ from flask_session import Session
 app = Flask(__name__)
 
 # Read configuration from environment variables
-# Note: You must set these in your Azure Web App's "Configuration" settings
 app.config.update(
     CLIENT_ID=os.environ.get("CLIENT_ID"),
     CLIENT_SECRET=os.environ.get("CLIENT_SECRET"),
     AUTHORITY=os.environ.get("AUTHORITY"),
     REDIRECT_PATH=os.environ.get("REDIRECT_PATH", "/redirect"),
     SCOPE=os.environ.get("SCOPE", "User.ReadBasic.All").split(' '),
-    SQLALCHEMY_DATABASE_URI=os.environ.get("DB_URI"),
+    SQLALCHEMY_DATABASE_URI=os.environ.get("SQLALCHEMY_DATABASE_URI"),
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     BLOB_ACCOUNT=os.environ.get("BLOB_ACCOUNT"),
     BLOB_CONTAINER=os.environ.get("BLOB_CONTAINER"),
