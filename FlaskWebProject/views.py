@@ -5,7 +5,6 @@ Routes and views for the flask application.
 from datetime import datetime
 from flask import render_template, flash, redirect, request, session, url_for
 from werkzeug.urls import url_parse
-from config import Config
 from FlaskWebProject import app, db
 from FlaskWebProject.forms import LoginForm, PostForm
 from flask_login import current_user, login_user, logout_user, login_required
@@ -13,7 +12,6 @@ from FlaskWebProject.models import User, Post
 import msal
 import uuid
 
-# This is the base URL for images from the blob storage container.
 imageSourceUrl = 'https://'+ app.config['BLOB_ACCOUNT']  + '.blob.core.windows.net/' + app.config['BLOB_CONTAINER']  + '/'
 
 @app.route('/')
@@ -68,95 +66,79 @@ def login():
         user = User.query.filter_by(username=form.username.data).first()
         if user is None or not user.check_password(form.password.data):
             flash('Invalid username or password')
-            # Log the unsuccessful login attempt
             app.logger.warning('Unsuccessful login attempt for user: %s', form.username.data)
             return redirect(url_for('login'))
         login_user(user, remember=form.remember_me.data)
         next_page = request.args.get('next')
         if not next_page or url_parse(next_page).netloc != '':
             next_page = url_for('home')
-        
-        # Log the successful login attempt
         app.logger.info('Successful login for user: %s', form.username.data)
         return redirect(next_page)
     
     # MSAL login setup
     session["state"] = str(uuid.uuid4())
-    auth_url = _build_auth_url(scopes=Config.SCOPE, state=session["state"])
+    auth_url = _build_auth_url(scopes=app.config['SCOPE'], state=session["state"])
     return render_template('login.html', title='Sign In', form=form, auth_url=auth_url)
 
-@app.route(Config.REDIRECT_PATH)  # Its absolute URL must match your app's redirect_uri set in AAD
+@app.route(app.config['REDIRECT_PATH'])
 def authorized():
     if request.args.get('state') != session.get("state"):
-        return redirect(url_for("home"))  # No-OP. Goes back to Index page
-    if "error" in request.args:  # Authentication/Authorization failure
-        # Log the unsuccessful MS login
+        return redirect(url_for("home"))
+    if "error" in request.args:
         app.logger.warning('Unsuccessful MS login attempt: %s', request.args.get("error_description"))
         return render_template("auth_error.html", result=request.args)
     
     if request.args.get('code'):
         cache = _load_cache()
-        # Acquire a token from a built msal app, along with the appropriate redirect URI
         result = _build_msal_app(cache=cache).acquire_token_by_authorization_code(
             request.args['code'],
-            scopes=Config.SCOPE,
+            scopes=app.config['SCOPE'],
             redirect_uri=url_for('authorized', _external=True, _scheme='https')
         )
         if "error" in result:
-            # Log the unsuccessful MS login
             app.logger.warning('Unsuccessful MS login attempt: %s', result.get("error_description"))
             return render_template("auth_error.html", result=result)
         
         session["user"] = result.get("id_token_claims")
-        
-        # Note: In a real app, we'd use the 'name' property from session["user"] below
-        # Here, we'll use the admin username for anyone who is authenticated by MS
         user = User.query.filter_by(username="admin").first()
         login_user(user)
         _save_cache(cache)
         
-        # Log the successful MS login
         app.logger.info('Successful MS login for user: %s', session["user"].get("name"))
     return redirect(url_for('home'))
 
 @app.route('/logout')
 def logout():
     logout_user()
-    if session.get("user"): # Used MS Login
-        # Wipe out user and its token cache from session
+    if session.get("user"):
         app.logger.info('Logging out MS user: %s', session["user"].get("name"))
         session.clear()
-        # Also logout from your tenant's web session
         return redirect(
-            Config.AUTHORITY + "/oauth2/v2.0/logout" +
+            app.config['AUTHORITY'] + "/oauth2/v2.0/logout" +
             "?post_logout_redirect_uri=" + url_for("login", _external=True, _scheme='https'))
     
     app.logger.info('Logging out internal user')
     return redirect(url_for('login'))
 
 def _load_cache():
-    # Load the cache from `msal`, if it exists
     cache = msal.SerializableTokenCache()
     if session.get("token_cache"):
         cache.deserialize(session["token_cache"])
     return cache
 
 def _save_cache(cache):
-    # Save the cache, if it has changed
     if cache.has_state_changed:
         session["token_cache"] = cache.serialize()
 
 def _build_msal_app(cache=None, authority=None):
-    # Return a ConfidentialClientApplication
     return msal.ConfidentialClientApplication(
-        Config.CLIENT_ID,
-        authority=authority or Config.AUTHORITY,
-        client_credential=Config.CLIENT_SECRET,
+        app.config['CLIENT_ID'],
+        authority=authority or app.config['AUTHORITY'],
+        client_credential=app.config['CLIENT_SECRET'],
         token_cache=cache
     )
 
 def _build_auth_url(authority=None, scopes=None, state=None):
-    # Return the full Auth Request URL with appropriate Redirect URI
     return _build_msal_app(authority=authority).get_authorization_request_url(
         scopes or [],
         state=state or str(uuid.uuid4()),
