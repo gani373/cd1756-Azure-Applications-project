@@ -23,7 +23,8 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), index=True, unique=True)
     password_hash = db.Column(db.String(128))
-
+    ms_oid = db.Column(db.String(128), index=True, unique=True)
+    
     def __repr__(self):
         return '<User {}>'.format(self.username)
 
@@ -41,6 +42,7 @@ class Post(db.Model):
     __tablename__ = 'posts'
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(150))
+    subtitle = db.Column(db.String(250))  # Add this line
     author = db.Column(db.String(75))
     body = db.Column(db.String(800))
     image_path = db.Column(db.String(100))
@@ -52,6 +54,7 @@ class Post(db.Model):
 
     def save_changes(self, form, file, userId, new=False):
         self.title = form.title.data
+        self.subtitle = form.subtitle.data # Add this line
         self.author = form.author.data
         self.body = form.body.data
         self.user_id = userId
