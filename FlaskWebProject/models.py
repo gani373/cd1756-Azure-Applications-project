@@ -10,10 +10,20 @@ from flask import flash
 # Get the connection string from app.config
 blob_connection_string = app.config.get('BLOB_CONNECTION_STRING')
 if not blob_connection_string:
-    raise ValueError("BLOB_CONNECTION_STRING is not set in app.config")
+    # Fallback to individual keys if connection string is not set
+    if not app.config.get('BLOB_ACCOUNT') or not app.config.get('BLOB_STORAGE_KEY'):
+        raise ValueError("BLOB_CONNECTION_STRING or BLOB_ACCOUNT/BLOB_STORAGE_KEY is not set in app.config")
+    
+    # This is an older, less secure method but included for compatibility
+    from azure.storage.blob import BlockBlobService
+    blob_service = BlockBlobService(account_name=app.config.get('BLOB_ACCOUNT'), account_key=app.config.get('BLOB_STORAGE_KEY'))
+    blob_container = app.config.get('BLOB_CONTAINER')
+    
+else:
+    # This is the modern and recommended approach
+    blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)
+    blob_container_client = blob_service_client.get_container_client(app.config.get('BLOB_CONTAINER'))
 
-blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)
-blob_container_client = blob_service_client.get_container_client(app.config.get('BLOB_CONTAINER'))
 
 def id_generator(size=32, chars=string.ascii_uppercase + string.digits):
     return ''.join(random.choice(chars) for _ in range(size))
@@ -42,7 +52,7 @@ class Post(db.Model):
     __tablename__ = 'posts'
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(150))
-    subtitle = db.Column(db.String(250))  # Add this line
+    subtitle = db.Column(db.String(250))
     author = db.Column(db.String(75))
     body = db.Column(db.String(800))
     image_path = db.Column(db.String(100))
@@ -54,7 +64,7 @@ class Post(db.Model):
 
     def save_changes(self, form, file, userId, new=False):
         self.title = form.title.data
-        self.subtitle = form.subtitle.data # Add this line
+        self.subtitle = form.subtitle.data
         self.author = form.author.data
         self.body = form.body.data
         self.user_id = userId
@@ -66,6 +76,7 @@ class Post(db.Model):
             filename = Randomfilename + '.' + fileextension
 
             try:
+                # Use the modern client to upload the file
                 blob_client = blob_container_client.get_blob_client(filename)
                 blob_client.upload_blob(file)
                 
@@ -81,4 +92,6 @@ class Post(db.Model):
             
         if new:
             db.session.add(self)
+        
+        # This single commit handles both new and updated posts
         db.session.commit()
