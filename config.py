@@ -1,7 +1,7 @@
 import os
 
 class Config(object):
-    # Flask app security
+    
     SECRET_KEY = os.environ.get('SECRET_KEY')
 
     # Azure Blob Storage
